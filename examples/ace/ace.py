@@ -175,6 +175,7 @@ def build_net(batch_size, input_size, enc_hid, gen_hid, dec_hid, num_classes,
               p_drop_input=0., p_drop_hidden=0., distribution='Gaussian',
               supervised=False):
     X = T.fmatrix('X')
+    Z = T.ftensor3('Z')
 
     net = OrderedDict()
     net['input'] = InputLayer((batch_size, input_size))
@@ -189,6 +190,10 @@ def build_net(batch_size, input_size, enc_hid, gen_hid, dec_hid, num_classes,
     net, recon_err_stack, X_hat = build_decoder(X, net, dec_hid, p_drop_hidden,
                                                 distribution)
 
+    # supervised generative output
+    X_hat_gen = build_sup_gen_net(Z, net, dec_hid, gen_hid, num_classes,
+                                  distribution)
+
     output_train = lasagne.layers.get_output(output_layer, X, deterministic=False)
     output_eval = lasagne.layers.get_output(output_layer, X, deterministic=True,
                                             batch_norm_use_averages=False)
@@ -200,23 +205,19 @@ def build_net(batch_size, input_size, enc_hid, gen_hid, dec_hid, num_classes,
     recon_err = (recon_err_stack * output_train).sum(axis=1).mean()
 
     if supervised: # supervised
-        Z = T.ftensor3('Z')
         y = T.fmatrix('y')
 
         # supervised non-generative output
         # X_hat shape: batch_size x n_c x n_x
         sup_X_hat = (X_hat * y.dimshuffle((0, 1, 'x'))).sum(axis=1)
-
-        # supervised generative output
-        X_hat_gen = build_sup_gen_net(Z, net, dec_hid, gen_hid, num_classes,
-                                      distribution)
         sup_X_hat_gen = (X_hat_gen * y.dimshuffle((0, 1, 'x'))).sum(axis=1)
         # every X_hat has shape: batch_size x n_x
 
-        super_dict = {'z': Z, 'y': y,
-                      'sup_X_hat': sup_X_hat,
-                      'sup_X_hat_gen': sup_X_hat_gen
-                      }
+        task_dict = {
+            'y': y,
+            'reconstruct': sup_X_hat,
+            'sample': sup_X_hat_gen
+        }
 
         # supervised errors
         sup_gen_err = (gen_err_stack * y).sum(axis=1).mean()
@@ -229,17 +230,22 @@ def build_net(batch_size, input_size, enc_hid, gen_hid, dec_hid, num_classes,
         costs = [sup_recon_err, sup_gen_err, class_err]
         # cost = sup_recon_err + sup_gen_err + class_err
     else: # unsupervised - density estimation
-        super_dict = dict()
+        task_dict = {
+            'reconstruct': X_hat.sum(axis=1),
+            'sample': X_hat_gen.sum(axis=1)
+        }
         costs = [recon_err, gen_err, dual_recon_err]
         # cost = recon_err + gen_err + dual_recon_err
 
     network_dump = {'output_layer': output_layer,
+                    'output_eval': output_eval,
+                    'cost': T.sum(costs),
                     'costs': costs,
                     'net': net,
                     'x': X,
-                    'output_eval': output_eval,
-                    'cost': T.sum(costs),
-                    'supervised': super_dict
+                    'z': Z,
                     }
+
+    network_dump.update(task_dict)
 
     return network_dump
