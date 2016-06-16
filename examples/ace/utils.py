@@ -1,9 +1,10 @@
-import numpy as np
 from PIL import Image
+import cPickle
 
 import theano
 th_rng = theano.tensor.shared_randomstreams.RandomStreams(9999)
 
+import numpy as np
 np.random.seed(9999)
 
 
@@ -116,3 +117,9 @@ def visualize (it, images, shape=[30,30], name='samples_', p=0):
                                     tile_spacing=(2,2))
     im_new = Image.fromarray(np.uint8(image_data))
     im_new.save(name+str(it)+'.png')
+
+
+def save_dump(filename,param_values):
+    f = file(filename, 'wb')
+    cPickle.dump(param_values,f,protocol=cPickle.HIGHEST_PROTOCOL)
+    f.close()
